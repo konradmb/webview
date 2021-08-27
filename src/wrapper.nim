@@ -7,7 +7,8 @@ proc randomString(): string =
   randomize()
   const lowerCaseAscii = 97..122
   32.newSeqWith(lowerCaseAscii.rand.char).join
-
+# {.fatal: "sdsdsd".}
+# asdasd
 type 
   # Webview* = pointer
   WindowSizeHint* {.pure.} = enum 
@@ -52,14 +53,14 @@ type
 
 var dispatchTable = newTable[int, ArgTuple]()
 
-proc wrapProc(seq: cstring, req: cstring, arg: pointer) {.cdecl.} =
+proc wrapProcConst(seq: constChar, req: constChar, arg: pointer) {.cdecl.} =
   var argUnref = dispatchTable[cast[int](arg)]
   let
     w = argUnref.w
     p = argUnref.p
   try:
-    let output = $ p(parseJson($req))
-    w.`return`(seq, 0.cint, output.cstring)
+    let output = $ p(parseJson($cast[cstring](req)))
+    w.`return`(cast[cstring](seq), 0.cint, output.cstring)
   except:
     let
       e = getCurrentException()
@@ -68,12 +69,15 @@ proc wrapProc(seq: cstring, req: cstring, arg: pointer) {.cdecl.} =
         fmt"""Exception "{e.name}" occured: {msg}""" & "\n" &
         fmt"Stacktrace: {e.getStacktrace()}"
       )
-    w.`return`(seq, 1.cint, jsonMsg.cstring)
+    w.`return`(cast[cstring](seq), 1.cint, jsonMsg.cstring)
+
+# proc wrapProc(seq: constCstring, req: constCstring, arg: pointer) {.cdecl.} =
+#   wrapProc(seq.cstring, req.cstring, arg)
 
 proc bindProc*(w: Webview, name: string, p: ProcA1R) =
   let i = dispatchTable.len() + 1
   dispatchTable[i] = (w, p)
-  w.`bind`(name, wrapProc, cast[pointer](i))
+  w.`bind`(name, wrapProcConst, cast[pointer](i))
 
 proc bindProc*(w: Webview, name: string, p: proc(req: JsonNode)) =
   proc wrap(req: JsonNode): JsonNode =
@@ -177,7 +181,7 @@ when isMainModule:
   w.navigate("")
 
   let a = "asdasdasd"
-  w.`bind`("test123", proc(seq: cstring, req: cstring, arg: pointer) {.cdecl.} = w.`return`(seq, 0.cint, cstring("{0: \"Success?" & $seq & $req & "\"}")), cast[pointer](a.unsafeAddr))
+  w.`bind`("test123", proc(seq: constChar, req: constChar, arg: pointer) {.cdecl.} = w.`return`(seq.cstring, 0.cint, cstring("{0: \"Success?" & $seq & $req & "\"}")), cast[pointer](a.unsafeAddr))
 
   proc test(a: JsonNode): JsonNode =
     assert a[0].getStr() != "error"
@@ -196,6 +200,7 @@ when isMainModule:
     proc asd(a: string): string = a & ". why?"
 
   # w.bindProc("scope", "test", test)
+  w.eval("""window.onload = () => {document.body.innerHTML += "<div>Eval successful</div>"};""")
   w.eval("alert(\"asdasdads\")")
   # w.bind("asdasd", nil, nil)
   w.run()
